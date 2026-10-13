@@ -2,6 +2,9 @@ import asyncHandler from '../utils/asyncHandler.js';
 import Appointment from '../models/Appointment.model.js';
 import User from '../models/User.model.js';
 import HealthRecord from '../models/HealthRecord.model.js';
+import FollowUp from '../models/FollowUp.model.js';
+import PatientMedication from '../models/PatientMedication.model.js';
+import { saveConsultationSummaryMemory } from '../services/aiMemory.service.js';
 import config from '../config/env.js';
 import mongoose from 'mongoose';
 import { createConsultationNoteFromAppointment } from './healthRecord.controller.js';
@@ -552,13 +555,47 @@ export const updateAppointmentStatus = asyncHandler(async (req, res) => {
     });
   }
 
-  // If appointment is marked completed, automatically create a consultation-note HealthRecord
+  // If appointment is marked completed, automatically create a consultation-note HealthRecord and AI memory
   let consultationRecord = null;
+  let followUpRecord = null;
   if (status === 'completed') {
     try {
       consultationRecord = await createConsultationNoteFromAppointment(updated);
     } catch (recErr) {
       console.warn('[Appointment] Auto-creating health record error:', recErr.message);
+    }
+
+    // Save structured consultation summary in application-owned AI memory
+    try {
+      await saveConsultationSummaryMemory(updated);
+    } catch (memErr) {
+      console.warn('[Appointment] Auto-saving AI memory error:', memErr.message);
+    }
+
+    // Handle Follow-up creation if specified by doctor (after 7 days, 30 days, or custom)
+    const { followUpDays, followUpDueDate, followUpReason, followUpInstructions } = req.body;
+    if ((followUpDays || followUpDueDate) && (followUpReason || updated.notes)) {
+      try {
+        let dueDate = followUpDueDate ? new Date(followUpDueDate) : new Date();
+        if (followUpDays) {
+          dueDate = new Date();
+          dueDate.setDate(dueDate.getDate() + Number(followUpDays));
+        }
+
+        if (mongoose.connection.readyState === 1 && updated.patientId && updated.doctorId) {
+          followUpRecord = await FollowUp.create({
+            patientId: updated.patientId,
+            doctorId: updated.doctorId,
+            consultationId: updated._id,
+            dueDate,
+            reason: followUpReason || `Follow-up evaluation after ${followUpDays || 7} days`,
+            instructions: followUpInstructions || 'Review medication response and symptoms',
+            status: 'UPCOMING',
+          });
+        }
+      } catch (fuErr) {
+        console.warn('[Appointment] Auto-creating follow-up error:', fuErr.message);
+      }
     }
   }
 
@@ -567,6 +604,7 @@ export const updateAppointmentStatus = asyncHandler(async (req, res) => {
     message: `Appointment status updated to ${status}`,
     appointment: updated,
     healthRecord: consultationRecord,
+    followUp: followUpRecord,
   });
 });
 

@@ -66,14 +66,44 @@ const userSchema = new mongoose.Schema(
       max: [130, 'Age exceeds realistic limit'],
       default: 35,
     },
+    dob: {
+      type: String,
+      default: '',
+    },
     gender: {
       type: String,
       enum: ['Male', 'Female', 'Other', 'Prefer not to say'],
       default: 'Male',
     },
+    bloodGroup: {
+      type: String,
+      enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'Unknown', ''],
+      default: 'Unknown',
+    },
+    allergies: {
+      type: [String],
+      default: [],
+    },
     chronicFlags: {
       type: [String],
       default: [],
+    },
+    chronicConditions: {
+      type: [String],
+      default: [],
+    },
+    surgeries: {
+      type: [String],
+      default: [],
+    },
+    currentMedications: {
+      type: [String],
+      default: [],
+    },
+    importantNotes: {
+      type: String,
+      default: '',
+      trim: true,
     },
     emergencyContact: {
       name: {
@@ -91,6 +121,24 @@ const userSchema = new mongoose.Schema(
         trim: true,
         default: 'Family Member',
       },
+    },
+    emergencyContacts: {
+      type: [
+        {
+          name: { type: String, trim: true, default: '' },
+          relationship: { type: String, trim: true, default: '' },
+          phone: { type: String, trim: true, default: '' },
+          priority: { type: Number, default: 1 },
+        },
+      ],
+      default: [
+        {
+          name: 'Ramesh Kumar',
+          relationship: 'Brother',
+          phone: '+91 98765 43210',
+          priority: 1,
+        },
+      ],
     },
 
     // Doctor Specific

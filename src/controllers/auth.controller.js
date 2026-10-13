@@ -19,7 +19,15 @@ export const register = asyncHandler(async (req, res) => {
     preferredLanguage,
     age,
     gender,
+    dob,
+    bloodGroup,
+    allergies,
     chronicFlags,
+    chronicConditions,
+    surgeries,
+    currentMedications,
+    importantNotes,
+    emergencyContacts,
     specialization,
     licenseId,
     availability,
@@ -54,6 +62,23 @@ export const register = asyncHandler(async (req, res) => {
   const userPhone = phone || (!isEmail ? normalizedIdentifier : undefined);
   const userEmail = email || (isEmail ? normalizedIdentifier : undefined);
 
+  const formattedEmergencyContacts = Array.isArray(emergencyContacts) && emergencyContacts.length > 0
+    ? emergencyContacts.map((c, i) => ({
+        name: c.name || '',
+        relationship: c.relationship || c.relation || '',
+        phone: c.phone || '',
+        priority: c.priority !== undefined ? Number(c.priority) : i + 1,
+      }))
+    : undefined;
+
+  const primaryContact = formattedEmergencyContacts && formattedEmergencyContacts.length > 0
+    ? {
+        name: formattedEmergencyContacts[0].name,
+        phone: formattedEmergencyContacts[0].phone,
+        relation: formattedEmergencyContacts[0].relationship,
+      }
+    : undefined;
+
   const user = await User.create({
     name: name.trim(),
     identifier: normalizedIdentifier,
@@ -64,8 +89,17 @@ export const register = asyncHandler(async (req, res) => {
     village: village ? village.trim() : 'Rampur Village',
     preferredLanguage: preferredLanguage || 'Hindi',
     age: age !== undefined ? Number(age) : 35,
+    dob: dob || '',
     gender: gender || 'Male',
-    chronicFlags: Array.isArray(chronicFlags) ? chronicFlags : [],
+    bloodGroup: bloodGroup || 'Unknown',
+    allergies: Array.isArray(allergies) ? allergies : [],
+    chronicFlags: Array.isArray(chronicFlags) ? chronicFlags : (Array.isArray(chronicConditions) ? chronicConditions : []),
+    chronicConditions: Array.isArray(chronicConditions) ? chronicConditions : (Array.isArray(chronicFlags) ? chronicFlags : []),
+    surgeries: Array.isArray(surgeries) ? surgeries : [],
+    currentMedications: Array.isArray(currentMedications) ? currentMedications : [],
+    importantNotes: importantNotes ? importantNotes.trim() : '',
+    emergencyContacts: formattedEmergencyContacts,
+    emergencyContact: primaryContact,
     specialization: specialization || 'General Physician',
     licenseId: licenseId || '',
     availability: Array.isArray(availability)
@@ -190,9 +224,17 @@ export const login = asyncHandler(async (req, res) => {
       village: user.village,
       preferredLanguage: user.preferredLanguage,
       age: user.age,
+      dob: user.dob,
       gender: user.gender,
-      chronicFlags: user.chronicFlags,
+      bloodGroup: user.bloodGroup,
+      allergies: user.allergies || [],
+      chronicFlags: user.chronicFlags || [],
+      chronicConditions: user.chronicConditions || user.chronicFlags || [],
+      surgeries: user.surgeries || [],
+      currentMedications: user.currentMedications || [],
+      importantNotes: user.importantNotes || '',
       emergencyContact: user.emergencyContact,
+      emergencyContacts: user.emergencyContacts || [],
       specialization: user.specialization,
       licenseId: user.licenseId,
       availability: user.availability,
@@ -229,9 +271,17 @@ export const updateProfile = asyncHandler(async (req, res) => {
     village,
     preferredLanguage,
     age,
+    dob,
     gender,
+    bloodGroup,
+    allergies,
     chronicFlags,
+    chronicConditions,
+    surgeries,
+    currentMedications,
+    importantNotes,
     emergencyContact,
+    emergencyContacts,
     specialization,
     licenseId,
     availability,
@@ -247,19 +297,42 @@ export const updateProfile = asyncHandler(async (req, res) => {
   if (name) user.name = name.trim();
   if (village !== undefined) user.village = village.trim();
   if (preferredLanguage) user.preferredLanguage = preferredLanguage;
-  if (emergencyContact && typeof emergencyContact === 'object') {
+
+  if (Array.isArray(emergencyContacts) && emergencyContacts.length > 0) {
+    user.emergencyContacts = emergencyContacts.map((c, i) => ({
+      name: c.name || '',
+      relationship: c.relationship || c.relation || '',
+      phone: c.phone || '',
+      priority: c.priority !== undefined ? Number(c.priority) : i + 1,
+    }));
+    user.emergencyContact = {
+      name: user.emergencyContacts[0].name,
+      phone: user.emergencyContacts[0].phone,
+      relation: user.emergencyContacts[0].relationship,
+    };
+  } else if (emergencyContact && typeof emergencyContact === 'object') {
     user.emergencyContact = {
       name: emergencyContact.name || user.emergencyContact?.name || 'Ramesh Kumar (Brother)',
       phone: emergencyContact.phone || user.emergencyContact?.phone || '+91 98765 43210',
-      relation: emergencyContact.relation || user.emergencyContact?.relation || 'Family Member',
+      relation: emergencyContact.relation || emergencyContact.relationship || user.emergencyContact?.relation || 'Family Member',
     };
   }
 
   // Role-specific field updates
   if (user.role === 'patient') {
     if (age !== undefined) user.age = Number(age);
+    if (dob !== undefined) user.dob = dob;
     if (gender) user.gender = gender;
+    if (bloodGroup !== undefined) user.bloodGroup = bloodGroup;
+    if (Array.isArray(allergies)) user.allergies = allergies;
     if (Array.isArray(chronicFlags)) user.chronicFlags = chronicFlags;
+    if (Array.isArray(chronicConditions)) {
+      user.chronicConditions = chronicConditions;
+      if (!Array.isArray(chronicFlags)) user.chronicFlags = chronicConditions;
+    }
+    if (Array.isArray(surgeries)) user.surgeries = surgeries;
+    if (Array.isArray(currentMedications)) user.currentMedications = currentMedications;
+    if (importantNotes !== undefined) user.importantNotes = importantNotes.trim();
   } else if (user.role === 'doctor') {
     if (specialization) user.specialization = specialization;
     if (licenseId !== undefined) user.licenseId = licenseId;

@@ -4,6 +4,8 @@ import EmergencyAlert from '../models/EmergencyAlert.model.js';
 import { analyzeSymptoms, chatSymptomTriage } from '../services/aiSymptomAnalysis.js';
 import { computeAndSaveRiskProfile } from '../services/riskScoring.js';
 import { inMemoryAlerts } from './emergencyAlert.controller.js';
+import { runHybridEmergencyTriage, createAndEscalateEmergencyEvent } from '../services/emergencyEscalation.service.js';
+import { savePatientMemory } from '../services/aiMemory.service.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import mongoose from 'mongoose';
 
@@ -66,10 +68,28 @@ export const createSymptom = asyncHandler(async (req, res) => {
       createdAt: new Date(),
     });
 
+    // Run hybrid emergency triage check immediately
+    let emergencyEvent = null;
+    try {
+      const triage = await runHybridEmergencyTriage(symptoms, normalizedSeverity, notes);
+      if (triage.requiresEscalation || triage.riskLevel === 'EMERGENCY') {
+        emergencyEvent = await createAndEscalateEmergencyEvent({
+          patientId,
+          symptoms,
+          riskLevel: triage.riskLevel,
+          reasons: triage.reasons,
+          requiresEscalation: triage.requiresEscalation,
+        });
+      }
+    } catch (e) {
+      console.warn('[Symptom] Emergency triage check failed:', e.message);
+    }
+
     return res.status(201).json({
       success: true,
       message: 'Symptom assessment submitted successfully',
       symptom: newSymptom,
+      emergencyEvent,
     });
   } else {
     // In-memory fallback
@@ -267,6 +287,7 @@ export const analyzeSymptomById = asyncHandler(async (req, res) => {
     const isEmergency =
       analysisResult.recommendedAction === 'emergency' || analysisResult.severityScore >= 8;
 
+    let emergencyEvent = null;
     if (isEmergency) {
       try {
         emergencyAlert = await EmergencyAlert.create({
@@ -280,6 +301,32 @@ export const analyzeSymptomById = asyncHandler(async (req, res) => {
       } catch (alertErr) {
         console.warn('[Emergency Alert] Failed to save alert:', alertErr.message);
       }
+
+      try {
+        emergencyEvent = await createAndEscalateEmergencyEvent({
+          patientId: symptomDoc.patientId,
+          symptoms: symptomDoc.symptoms,
+          riskLevel: 'EMERGENCY',
+          reasons: [analysisResult.explanation || 'Emergency clinical triage threshold triggered'],
+          requiresEscalation: true,
+        });
+      } catch (escErr) {
+        console.warn('[Emergency Escalation] Failed to escalate:', escErr.message);
+      }
+    }
+
+    // Save recurring symptom memory
+    try {
+      await savePatientMemory({
+        patientId: symptomDoc.patientId,
+        memoryType: 'recurring_symptom',
+        content: `Reported ${symptomDoc.symptoms.join(', ')} (${symptomDoc.severity}, ${symptomDoc.durationDays} days). Analysis: ${analysisResult.possibleConditions?.join(', ')}. Action: ${analysisResult.recommendedAction}`,
+        source: 'symptom_check',
+        sourceId: symptomDoc._id,
+        importance: isEmergency ? 9 : 6,
+      });
+    } catch (memErr) {
+      console.warn('[AIMemory] Failed to save symptom memory:', memErr.message);
     }
 
     // Automatically recompute patient risk profile
@@ -294,6 +341,7 @@ export const analyzeSymptomById = asyncHandler(async (req, res) => {
       message: 'Symptom analysis generated successfully',
       analysis: savedAnalysis,
       emergencyAlert,
+      emergencyEvent,
     });
   } else {
     const fallbackAnalysis = {

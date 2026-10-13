@@ -6,12 +6,16 @@ import reminderRoutes from './reminder.routes.js';
 import symptomRoutes from './symptom.routes.js';
 import riskRoutes from './risk.routes.js';
 import emergencyAlertRoutes from './emergencyAlert.routes.js';
+import emergencyEventRoutes from './emergencyEvent.routes.js';
 import healthRecordRoutes from './healthRecord.routes.js';
 import facilityRoutes from './facility.routes.js';
 import medicineRoutes from './medicine.routes.js';
 import preventiveTipRoutes from './preventiveTip.routes.js';
 import medicineOrderRoutes from './medicineOrder.routes.js';
 import webrtcRoutes from './webrtc.routes.js';
+import patientMedicationRoutes from './patientMedication.routes.js';
+import followUpRoutes from './followUp.routes.js';
+import clinicalSummaryRoutes from './clinicalSummary.routes.js';
 
 const router = Router();
 
@@ -23,11 +27,15 @@ router.use('/reminders', reminderRoutes);
 router.use('/symptoms', symptomRoutes);
 router.use('/risk', riskRoutes);
 router.use('/emergency-alerts', emergencyAlertRoutes);
+router.use('/emergency-events', emergencyEventRoutes);
 router.use('/health-records', healthRecordRoutes);
 router.use('/facilities', facilityRoutes);
 router.use('/medicines', medicineRoutes);
 router.use('/preventive-tips', preventiveTipRoutes);
 router.use('/medicine-orders', medicineOrderRoutes);
 router.use('/webrtc', webrtcRoutes);
+router.use('/patient-medications', patientMedicationRoutes);
+router.use('/follow-ups', followUpRoutes);
+router.use('/clinical-summary', clinicalSummaryRoutes);
 
 export default router;
