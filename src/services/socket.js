@@ -107,8 +107,13 @@ export const initSocketServer = (httpServer, allowedOrigins = []) => {
     });
 
     // Join room for teleconsultation
-    socket.on('join-room', ({ roomId, userId, userName, userRole }) => {
-      if (!roomId) return;
+    socket.on('join-room', ({ roomId, userId, userName, userRole }, callback) => {
+      if (!roomId) {
+        if (typeof callback === 'function') {
+          callback({ success: false, error: 'roomId is required' });
+        }
+        return;
+      }
       socket.join(roomId);
 
       if (!roomUsers.has(roomId)) {
@@ -116,15 +121,38 @@ export const initSocketServer = (httpServer, allowedOrigins = []) => {
       }
       const currentRoom = roomUsers.get(roomId);
 
-      // Inform other users in this room
-      const existingUsers = Array.from(currentRoom.entries()).map(([sockId, info]) => ({
-        socketId: sockId,
-        ...info,
-      }));
+      // Clean up any stale sockets for this userId in the room (e.g. from refresh or reconnect)
+      if (userId) {
+        for (const [sId, info] of currentRoom.entries()) {
+          if (sId !== socket.id && info.userId && String(info.userId) === String(userId)) {
+            console.log(`[Socket] Cleaning up stale socket ${sId} for user ${userName} (${userId})`);
+            currentRoom.delete(sId);
+            socket.to(roomId).emit('user-left', { socketId: sId, userId });
+          }
+        }
+      }
+
+      // Existing participants in this room (excluding self)
+      const existingUsers = Array.from(currentRoom.entries())
+        .filter(([sockId]) => sockId !== socket.id)
+        .map(([sockId, info]) => ({
+          socketId: sockId,
+          ...info,
+        }));
 
       currentRoom.set(socket.id, { userId, userName, userRole, joinedAt: Date.now() });
 
       console.log(`[Socket] ${userName} (${userRole}) joined room: ${roomId}. Current room size: ${currentRoom.size}`);
+
+      // Acknowledge join event
+      if (typeof callback === 'function') {
+        callback({
+          success: true,
+          roomId,
+          socketId: socket.id,
+          participants: existingUsers,
+        });
+      }
 
       // Send existing participants to the newly joined peer
       socket.emit('existing-participants', {
@@ -142,6 +170,10 @@ export const initSocketServer = (httpServer, allowedOrigins = []) => {
 
     // WebRTC Signaling: Offer
     socket.on('webrtc-offer', ({ targetSocketId, sdp, callerInfo }) => {
+      if (!targetSocketId) {
+        console.warn(`[Socket] webrtc-offer missing targetSocketId from ${socket.id}`);
+        return;
+      }
       io.to(targetSocketId).emit('webrtc-offer', {
         senderSocketId: socket.id,
         sdp,
@@ -151,6 +183,10 @@ export const initSocketServer = (httpServer, allowedOrigins = []) => {
 
     // WebRTC Signaling: Answer
     socket.on('webrtc-answer', ({ targetSocketId, sdp }) => {
+      if (!targetSocketId) {
+        console.warn(`[Socket] webrtc-answer missing targetSocketId from ${socket.id}`);
+        return;
+      }
       io.to(targetSocketId).emit('webrtc-answer', {
         senderSocketId: socket.id,
         sdp,
@@ -159,6 +195,7 @@ export const initSocketServer = (httpServer, allowedOrigins = []) => {
 
     // WebRTC Signaling: ICE Candidate
     socket.on('webrtc-ice-candidate', ({ targetSocketId, candidate }) => {
+      if (!targetSocketId || !candidate) return;
       io.to(targetSocketId).emit('webrtc-ice-candidate', {
         senderSocketId: socket.id,
         candidate,
@@ -235,12 +272,13 @@ export const initSocketServer = (httpServer, allowedOrigins = []) => {
         socket.leave(roomId);
         const currentRoom = roomUsers.get(roomId);
         if (currentRoom) {
+          const userMeta = currentRoom.get(socket.id);
           currentRoom.delete(socket.id);
           if (currentRoom.size === 0) {
             roomUsers.delete(roomId);
           }
+          socket.to(roomId).emit('user-left', { socketId: socket.id, userId: userMeta?.userId });
         }
-        socket.to(roomId).emit('user-left', { socketId: socket.id });
       }
     });
 
@@ -250,8 +288,9 @@ export const initSocketServer = (httpServer, allowedOrigins = []) => {
       // Clean up rooms
       roomUsers.forEach((usersMap, rId) => {
         if (usersMap.has(socket.id)) {
+          const userMeta = usersMap.get(socket.id);
           usersMap.delete(socket.id);
-          socket.to(rId).emit('user-left', { socketId: socket.id });
+          socket.to(rId).emit('user-left', { socketId: socket.id, userId: userMeta?.userId });
           if (usersMap.size === 0) {
             roomUsers.delete(rId);
           }
