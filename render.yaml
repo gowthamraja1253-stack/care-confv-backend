@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: care-connect-v2-backend
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRE
+        value: 7d
+      - key: CLIENT_ORIGIN
+        value: https://*.vercel.app
+      - key: ALLOWED_ORIGINS
+        value: https://*.vercel.app,capacitor://localhost,http://localhost,https://localhost,http://localhost:3000
+      - key: TRUST_PROXY
+        value: "true"
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: qwen/qwen3.8-27b
+      - key: STUN_SERVERS
+        value: stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302

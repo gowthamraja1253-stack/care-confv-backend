@@ -87,6 +87,9 @@ const allowedOrigins = [
   'https://localhost:3000',
   'http://127.0.0.1:3000',
   'https://127.0.0.1:3000',
+  'capacitor://localhost',
+  'http://localhost',
+  'https://localhost',
   ...configuredOrigins,
 ].filter(Boolean);
 
@@ -96,15 +99,29 @@ app.use(cors({
     if (allowedOrigins.includes(origin)) {
       return callback(null, origin);
     }
+    // Allow Capacitor / Ionic app origins
+    if (origin.startsWith('capacitor://') || origin.startsWith('ionic://') || origin === 'http://localhost' || origin === 'https://localhost') {
+      return callback(null, origin);
+    }
+    // Allow Vercel preview and production deployments (*.vercel.app)
+    try {
+      const parsed = new URL(origin);
+      if (parsed.hostname.endsWith('.vercel.app') || parsed.hostname === 'vercel.app') {
+        return callback(null, origin);
+      }
+    } catch {}
     const isMatched = allowedOrigins.some((allowed) => {
       if (allowed === '*') return true;
-      if (allowed.startsWith('*.')) {
-        const domain = allowed.slice(2);
+      let pattern = allowed;
+      if (pattern.startsWith('https://')) pattern = pattern.slice(8);
+      else if (pattern.startsWith('http://')) pattern = pattern.slice(7);
+      if (pattern.startsWith('*.')) {
+        const domain = pattern.slice(2);
         try {
           const url = new URL(origin);
           return url.hostname.endsWith(domain);
         } catch {
-          return origin.endsWith(allowed.slice(1));
+          return origin.endsWith(pattern.slice(1));
         }
       }
       return false;
